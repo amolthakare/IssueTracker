@@ -124,3 +124,45 @@ IssueTracker is a full-featured issue tracking and project management system des
   "role": "developer",
   "avatar": "base64ImageString"
 }
+```
+#### `POST /auth/login`
+```json
+{
+  "email": "john@example.com",
+  "password": "securePassword123"
+}
+```
+
+### 5.2 Companies
+#### `POST /companies`
+```json
+{
+  "name": "Acme Corp",
+  "email": "contact@acme.com"
+}
+```
+
+### 5.3 Projects
+#### `POST /projects`
+```json
+{
+  "name": "Website Redesign",
+  "key": "WRD",
+  "description": "Complete overhaul of company website",
+  "project_lead": "507f1f77bcf86cd799439012",
+  "team_members": ["507f1f77bcf86cd799439013"],
+  "categories": ["frontend", "design"]
+}
+```
+
+### 5.3 Issues
+#### `POST /issues
+```json
+{
+  "project_id": "507f1f77bcf86cd799439014",
+  "title": "Homepage loading slow",
+  "description": "Homepage takes 5+ seconds to load on mobile",
+  "issue_type": "bug",
+  "priority": "high"
+}
+```
