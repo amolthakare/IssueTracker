@@ -8,12 +8,7 @@ const userSchema = new mongoose.Schema({
     ref: 'Company',
     required: true
   },
-  first_name: {
-    type: String,
-    required: true,
-    trim: true
-  },
-  last_name: {
+  name: {
     type: String,
     required: true,
     trim: true
