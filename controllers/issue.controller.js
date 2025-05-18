@@ -6,8 +6,10 @@ const { v4: uuidv4 } = require('uuid');
 const Issue = require('../models/issue.model');
 const Project = require('../models/project.model');
 const User = require('../models/user.model');
+const multer = require('multer');
 
 // Configure multer for file uploads
+
 const storage = multer.diskStorage({
   destination: function(req, file, cb) {
     const uploadDir = path.join(__dirname, '../../uploads/issues');

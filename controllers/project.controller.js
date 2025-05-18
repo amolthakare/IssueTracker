@@ -6,6 +6,7 @@ const { v4: uuidv4 } = require('uuid');
 const Project = require('../models/project.model');
 const User = require('../models/user.model');
 const Company = require('../models/company.model');
+const multer = require('multer');
 
 // Configure multer for project avatar uploads
 const storage = multer.diskStorage({

@@ -33,7 +33,7 @@ router.post('/:id/comments', auth, addComment);
 router.post('/:id/subtasks', auth, addSubtask);
 
 // Add an attachment
-router.post('/:id/attachments', auth, upload.single('attachment'), uploadAttachment);
+router.post('/:id/attachments', auth, upload, uploadAttachment);
 
 // Delete an attachment
 router.delete('/:issueId/attachments/:attachmentId', auth, deleteAttachment);

@@ -3,6 +3,10 @@ const User = require('../models/user.model');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+
+const DEFAULT_AVATAR_PATH = path.join(__dirname, '../assets/user.png');
 
 // Configure multer for file uploads
 const upload = multer({
@@ -26,13 +30,29 @@ const register = async (req, res) => {
 
       const { company_id, name, email, password, role } = req.body;
       
+      let avatarBase64 = null;
+      
+      if (req.file) {
+        // If avatar was uploaded, use it
+        avatarBase64 = req.file.buffer.toString('base64');
+      } else {
+        // If no avatar was uploaded, use the default one
+        try {
+          const defaultAvatar = fs.readFileSync(DEFAULT_AVATAR_PATH);
+          avatarBase64 = defaultAvatar.toString('base64');
+        } catch (error) {
+          console.error('Error loading default avatar:', error);
+          // Continue without avatar if default can't be loaded
+        }
+      }
+
       const user = new User({
         company_id,
         name,
         email,
         password,
         role,
-        avatar: req.file ? req.file.buffer.toString('base64') : null
+        avatar: avatarBase64
       });
 
       await user.save();
