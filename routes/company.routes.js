@@ -1,10 +1,10 @@
-// routes/company.routes.js
 const express = require('express');
 const router = express.Router();
 const {
   createCompany,
   getAllCompanies,
   getCompanyById,
+  getCompanyByCode,
   updateCompany,
   deleteCompany
 } = require('../controllers/company.controller');
@@ -17,6 +17,9 @@ router.get('/', getAllCompanies);
 
 // Get a specific company by ID
 router.get('/:id', getCompanyById);
+
+// Get a specific company by CODE (new route)
+router.get('/code/:code', getCompanyByCode);
 
 // Update a company by ID
 router.patch('/:id', updateCompany);

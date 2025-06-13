@@ -5,6 +5,7 @@ const jwt = require('jsonwebtoken');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const Company = require('../models/company.model');
 
 const DEFAULT_AVATAR_PATH = path.join(__dirname, '../assets/user.png');
 
@@ -24,30 +25,60 @@ const upload = multer({
 const register = async (req, res) => {
   try {
     upload(req, res, async function(err) {
-      if (err) {
+      // Handle upload errors
+      if (err instanceof multer.MulterError) {
+        return res.status(400).send({ error: 'File upload error: ' + err.message });
+      } else if (err) {
         return res.status(400).send({ error: err.message });
       }
 
-      const { company_id, name, email, password, role } = req.body;
+      // Validate required fields
+      const { company_code, name, email, password, role } = req.body;
       
-      let avatarBase64 = null;
-      
-      if (req.file) {
-        // If avatar was uploaded, use it
-        avatarBase64 = req.file.buffer.toString('base64');
-      } else {
-        // If no avatar was uploaded, use the default one
-        try {
-          const defaultAvatar = fs.readFileSync(DEFAULT_AVATAR_PATH);
-          avatarBase64 = defaultAvatar.toString('base64');
-        } catch (error) {
-          console.error('Error loading default avatar:', error);
-          // Continue without avatar if default can't be loaded
-        }
+      if (!company_code || !name || !email || !password || !role) {
+        return res.status(400).send({ error: 'All fields are required' });
       }
 
+      // First, find the company by its code
+      const company = await Company.findOne({ company_code });
+      if (!company) {
+        return res.status(400).send({ error: 'Invalid company code' });
+      }
+
+      // Validate email format
+      const emailRegex = /^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/;
+      if (!emailRegex.test(email)) {
+        return res.status(400).send({ error: 'Invalid email format' });
+      }
+
+      // Check for existing user
+      const existingUser = await User.findOne({ email });
+      if (existingUser) {
+        return res.status(409).send({ error: 'Email already in use' });
+      }
+
+      // Validate password complexity
+      if (password.length < 8) {
+        return res.status(400).send({ error: 'Password must be at least 8 characters' });
+      }
+
+      let avatarBase64 = null;
+      
+      try {
+        if (req.file) {
+          avatarBase64 = req.file.buffer.toString('base64');
+        } else {
+          const defaultAvatar = fs.readFileSync(DEFAULT_AVATAR_PATH);
+          avatarBase64 = defaultAvatar.toString('base64');
+        }
+      } catch (error) {
+        console.error('Avatar processing error:', error);
+        avatarBase64 = null;
+      }
+
+      // Create new user with company's ObjectId
       const user = new User({
-        company_id,
+        company_id: company._id, // Store the company's ObjectId
         name,
         email,
         password,
@@ -58,10 +89,18 @@ const register = async (req, res) => {
       await user.save();
       const token = await user.generateAuthToken();
       
-      res.status(201).send({ user, token });
+      res.status(201).send({ 
+        user,
+        token,
+        company_details: { // Optionally include some company details in response
+          name: company.name,
+          company_code: company.company_code
+        }
+      });
     });
   } catch (error) {
-    res.status(400).send({ error: error.message });
+    console.error('Registration error:', error);
+    res.status(500).send({ error: 'Internal server error during registration' });
   }
 };
 
