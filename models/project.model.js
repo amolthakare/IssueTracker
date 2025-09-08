@@ -54,9 +54,6 @@ const projectSchema = new mongoose.Schema({
     enum: ['active', 'inactive', 'completed', 'archived'],
     default: 'active'
   },
-  avatar: {
-    type: String // URL or base64 encoded image
-  },
   categories: [{
     type: String,
     trim: true

@@ -1,94 +1,158 @@
 // controllers/project.controller.js
 const mongoose = require('mongoose');
-const path = require('path');
-const fs = require('fs');
-const { v4: uuidv4 } = require('uuid');
 const Project = require('../models/project.model');
 const User = require('../models/user.model');
 const Company = require('../models/company.model');
-const multer = require('multer');
-
-// Configure multer for project avatar uploads
-const storage = multer.diskStorage({
-  destination: function(req, file, cb) {
-    const uploadDir = path.join(__dirname, '../../uploads/projects');
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-    }
-    cb(null, uploadDir);
-  },
-  filename: function(req, file, cb) {
-    const uniqueSuffix = `${Date.now()}-${uuidv4()}`;
-    cb(null, `${uniqueSuffix}${path.extname(file.originalname)}`);
-  }
-});
-
-const upload = multer({
-  storage: storage,
-  limits: {
-    fileSize: 2 * 1024 * 1024 // 2MB limit
-  },
-  fileFilter: function(req, file, cb) {
-    if (!file.originalname.match(/\.(jpg|jpeg|png)$/)) {
-      return cb(new Error('Only image files (jpg, jpeg, png) are allowed'));
-    }
-    cb(null, true);
-  }
-}).single('avatar');
 
 const createProject = async (req, res) => {
   try {
-    upload(req, res, async (err) => {
-      if (err) {
-        return res.status(400).send({ error: err.message });
-      }
+    const { name, key, description, project_lead, team_members, start_date, end_date, status, categories } = req.body;
 
-      const { name, key, description, project_lead, team_members, end_date, categories } = req.body;
-
-      // Validate company exists
-      const company = await Company.findById(req.user.company_id);
-      if (!company) {
-        return res.status(404).send({ error: 'Company not found' });
-      }
-
-      // Validate project lead
-      const lead = await User.findOne({ _id: project_lead, company_id: req.user.company_id });
-      if (!lead) {
-        return res.status(400).send({ error: 'Invalid project lead' });
-      }
-
-      // Validate team members
-      if (team_members && team_members.length > 0) {
-        const members = await User.find({
-          _id: { $in: team_members },
-          company_id: req.user.company_id
-        });
-        if (members.length !== team_members.length) {
-          return res.status(400).send({ error: 'One or more team members are invalid' });
+    // Validate required fields
+    const requiredFields = ['name', 'key', 'project_lead'];
+    const missingFields = requiredFields.filter(field => !req.body[field]);
+    
+    if (missingFields.length > 0) {
+      return res.status(400).json({ 
+        success: false,
+        message: {
+          error_type: 'Missing required fields',
+          error_message: 'Project creation requires essential information',
+          details: {
+            missing_fields: missingFields,
+            required_fields: requiredFields,
+            suggestion: 'Please provide all required project details'
+          }
         }
-      }
-
-      const project = new Project({
-        company_id: req.user.company_id,
-        name,
-        key: key.toUpperCase(),
-        description,
-        project_lead,
-        team_members: team_members ? [...team_members, project_lead] : [project_lead],
-        created_by: req.user._id,
-        end_date: end_date ? new Date(end_date) : null,
-        categories: categories ? categories.split(',').map(cat => cat.trim()) : [],
-        avatar: req.file ? `/uploads/projects/${req.file.filename}` : null
       });
-
-      await project.save();
-      res.status(201).send(project);
-    });
-  } catch (error) {
-    if (req.file && fs.existsSync(req.file.path)) {
-      fs.unlinkSync(req.file.path);
     }
-    res.status(400).send({ error: error.message });
+
+    // Validate company exists
+    const company = await Company.findById(req.user.company_id);
+    if (!company) {
+      return res.status(404).json({ 
+        success: false,
+        message: {
+          error_type: 'Company not found',
+          error_message: 'Your company account could not be found',
+          details: {
+            company_id: req.user.company_id,
+            suggestion: 'Contact system administrator or check your account settings'
+          }
+        }
+      });
+    }
+
+    // Validate project lead
+    const lead = await User.findOne({ _id: project_lead, company_id: req.user.company_id });
+    if (!lead) {
+      return res.status(400).json({ 
+        success: false,
+        message: {
+          error_type: 'Invalid project lead',
+          error_message: 'The selected project lead is not valid for your company',
+          details: {
+            provided_project_lead: project_lead,
+            suggestion: 'Select a team member from your company as project lead'
+          }
+        }
+      });
+    }
+
+    // Validate team members
+    if (team_members && team_members.length > 0) {
+      const members = await User.find({
+        _id: { $in: team_members },
+        company_id: req.user.company_id
+      });
+      if (members.length !== team_members.length) {
+        const invalidMembers = team_members.filter(memberId => 
+          !members.some(m => m._id.toString() === memberId.toString())
+        );
+        
+        return res.status(400).json({ 
+          success: false,
+          message: {
+            error_type: 'Invalid team members',
+            error_message: 'One or more selected team members are not valid for your company',
+            details: {
+              invalid_members: invalidMembers,
+              suggestion: 'Select team members from your company only'
+            }
+          }
+        });
+      }
+    }
+
+    // Check if project key already exists
+    const existingProject = await Project.findOne({ 
+      key: key.toUpperCase(), 
+      company_id: req.user.company_id 
+    });
+    
+    if (existingProject) {
+      return res.status(409).json({ 
+        success: false,
+        message: {
+          error_type: 'Duplicate project key',
+          error_message: 'A project with this key already exists in your company',
+          details: {
+            provided_key: key.toUpperCase(),
+            suggestion: 'Choose a unique project key for your company'
+          }
+        }
+      });
+    }
+
+     // Handle categories - should be an array
+    let processedCategories = [];
+    if (categories) {
+      if (Array.isArray(categories)) {
+        processedCategories = categories.map(cat => cat.trim()).filter(cat => cat);
+      } else if (typeof categories === 'string') {
+        processedCategories = categories.split(',').map(cat => cat.trim()).filter(cat => cat);
+      }
+    }
+
+    const project = new Project({
+      company_id: req.user.company_id,
+      name,
+      key: key.toUpperCase(),
+      description,
+      project_lead,
+      team_members: team_members || [], // Should be an array
+      created_by: req.user._id,
+      start_date: start_date ? new Date(start_date) : null,
+      end_date: end_date ? new Date(end_date) : null,
+      status: status ? status : 'active',
+      categories: processedCategories
+    });
+
+    await project.save();
+    
+    res.status(201).json({ 
+      success: true,
+      message: {
+        success_type: 'Project created',
+        success_message: 'Project has been successfully created',
+        details: {
+          project_id: project._id,
+          project_key: project.key
+        }
+      },
+      project
+    });
+
+  } catch (error) {
+    console.error('Create project error:', error);
+    res.status(500).json({ 
+      success: false,
+      message: {
+        error_type: 'Project creation failed',
+        error_message: 'An unexpected error occurred while creating the project',
+        details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      }
+    });
   }
 };
 
@@ -119,9 +183,31 @@ const getAllProjects = async (req, res) => {
     };
 
     const projects = await Project.paginate(filter, options);
-    res.send(projects);
+    
+    res.status(200).json({ 
+      success: true,
+      message: {
+        success_type: 'Projects retrieved',
+        success_message: 'Projects list retrieved successfully',
+        details: {
+          total_projects: projects.totalDocs,
+          current_page: projects.page,
+          total_pages: projects.totalPages
+        }
+      },
+      data: projects
+    });
+    
   } catch (error) {
-    res.status(500).send({ error: error.message });
+    console.error('Get projects error:', error);
+    res.status(500).json({ 
+      success: false,
+      message: {
+        error_type: 'Projects retrieval failed',
+        error_message: 'An unexpected error occurred while retrieving projects',
+        details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      }
+    });
   }
 };
 
@@ -137,35 +223,120 @@ const getProjectById = async (req, res) => {
       });
 
     if (!project) {
-      return res.status(404).send({ error: 'Project not found' });
+      return res.status(404).json({ 
+        success: false,
+        message: {
+          error_type: 'Project not found',
+          error_message: 'The requested project could not be found',
+          details: {
+            project_id: req.params.id,
+            suggestion: 'Check the project ID or verify project existence'
+          }
+        }
+      });
     }
 
-    res.send(project);
+    // Check if user has access to this project
+    if (project.company_id.toString() !== req.user.company_id.toString()) {
+      return res.status(403).json({ 
+        success: false,
+        message: {
+          error_type: 'Access denied',
+          error_message: 'You do not have permission to access this project',
+          details: {
+            project_id: req.params.id,
+            suggestion: 'Contact your administrator for project access'
+          }
+        }
+      });
+    }
+
+    res.status(200).json({ 
+      success: true,
+      message: {
+        success_type: 'Project retrieved',
+        success_message: 'Project details retrieved successfully',
+        details: {
+          project_id: project._id,
+          project_key: project.key
+        }
+      },
+      data: project
+    });
+    
   } catch (error) {
-    res.status(500).send({ error: error.message });
+    console.error('Get project by ID error:', error);
+    res.status(500).json({ 
+      success: false,
+      message: {
+        error_type: 'Project retrieval failed',
+        error_message: 'An unexpected error occurred while retrieving the project',
+        details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      }
+    });
   }
 };
 
 const updateProject = async (req, res) => {
   try {
-    upload(req, res, async (err) => {
-      if (err) {
-        return res.status(400).send({ error: err.message });
-      }
+    console.log('Update project called with ID:', req.params.id);
+    console.log('Request body:', req.body);
 
-      const updates = Object.keys(req.body);
-      const allowedUpdates = ['name', 'description', 'project_lead', 'team_members', 'end_date', 'status', 'categories'];
-      const isValidOperation = updates.every(update => allowedUpdates.includes(update));
+    // Check if project exists
+    if (!req.project) {
+      return res.status(404).json({
+        success: false,
+        message: {
+          error_type: 'Project not found',
+          error_message: 'Project not found'
+        }
+      });
+    }
 
-      if (!isValidOperation) {
-        return res.status(400).send({ error: 'Invalid updates!' });
-      }
+    const updates = Object.keys(req.body);
+    console.log('Requested updates:', updates);
 
-      const project = req.project;
+    const allowedUpdates = ['name', 'key', 'description', 'project_lead', 'team_members', 'start_date', 'end_date', 'status', 'categories'];
+    const isValidOperation = updates.every(update => allowedUpdates.includes(update));
 
-      // Handle team members update
-      if (updates.includes('team_members')) {
-        const team_members = JSON.parse(req.body.team_members);
+    if (!isValidOperation) {
+      return res.status(400).json({
+        success: false,
+        message: {
+          error_type: 'Invalid updates',
+          error_message: 'One or more update fields are not allowed',
+          details: {
+            provided_updates: updates,
+            allowed_updates: allowedUpdates,
+            suggestion: 'Only update allowed fields for the project'
+          }
+        }
+      });
+    }
+
+    const project = req.project;
+
+    // Handle team members update
+    if (updates.includes('team_members') && req.body.team_members) {
+      try {
+        console.log('Processing team members:', req.body.team_members);
+        
+        // Team members should be an array (no JSON parsing needed)
+        const team_members = req.body.team_members;
+        
+        // Validate it's an array
+        if (!Array.isArray(team_members)) {
+          return res.status(400).json({
+            success: false,
+            message: {
+              error_type: 'Invalid team members format',
+              error_message: 'Team members should be provided as an array',
+              details: {
+                suggestion: 'Provide team members as a valid array of user IDs'
+              }
+            }
+          });
+        }
         
         const members = await User.find({
           _id: { $in: team_members },
@@ -173,73 +344,197 @@ const updateProject = async (req, res) => {
         });
         
         if (members.length !== team_members.length) {
-          return res.status(400).send({ error: 'One or more team members are invalid' });
+          const invalidMembers = team_members.filter(memberId => 
+            !members.some(m => m._id.toString() === memberId.toString())
+          );
+          
+          return res.status(400).json({
+            success: false,
+            message: {
+              error_type: 'Invalid team members',
+              error_message: 'One or more team members are not valid for your company',
+              details: {
+                invalid_members: invalidMembers,
+                suggestion: 'Select team members from your company only'
+              }
+            }
+          });
         }
 
         project.team_members = team_members;
-      }
-
-      // Handle project lead update
-      if (updates.includes('project_lead')) {
-        const lead = await User.findOne({ 
-          _id: req.body.project_lead, 
-          company_id: req.user.company_id 
+      } catch (error) {
+        console.error('Team members error:', error);
+        return res.status(400).json({
+          success: false,
+          message: {
+            error_type: 'Invalid team members',
+            error_message: 'Team members data is not valid',
+            details: {
+              suggestion: 'Provide team members as a valid array of user IDs'
+            }
+          }
         });
-        
-        if (!lead) {
-          return res.status(400).send({ error: 'Invalid project lead' });
-        }
+      }
+    }
 
-        if (!project.team_members.includes(req.body.project_lead)) {
-          project.team_members.push(req.body.project_lead);
-        }
-
-        project.project_lead = req.body.project_lead;
+    // Handle project lead update
+    if (updates.includes('project_lead') && req.body.project_lead) {
+      console.log('Processing project lead:', req.body.project_lead);
+      const lead = await User.findOne({
+        _id: req.body.project_lead,
+        company_id: req.user.company_id
+      });
+      
+      if (!lead) {
+        return res.status(400).json({
+          success: false,
+          message: {
+            error_type: 'Invalid project lead',
+            error_message: 'The selected project lead is not valid for your company',
+            details: {
+              provided_project_lead: req.body.project_lead,
+              suggestion: 'Select a team member from your company as project lead'
+            }
+          }
+        });
       }
 
-      // Handle other updates
-      updates.forEach(update => {
-        if (update !== 'team_members' && update !== 'project_lead') {
-          if (update === 'end_date' && req.body[update]) {
+      if (!project.team_members.includes(req.body.project_lead)) {
+        project.team_members.push(req.body.project_lead);
+      }
+
+      project.project_lead = req.body.project_lead;
+    }
+
+    // Handle categories update
+    if (updates.includes('categories') && req.body.categories) {
+      try {
+        // Categories should be an array (no JSON parsing needed)
+        const categories = req.body.categories;
+        
+        // Validate it's an array
+        if (!Array.isArray(categories)) {
+          // If it's a string, try to split it
+          if (typeof categories === 'string') {
+            project.categories = categories.split(',').map(cat => cat.trim()).filter(cat => cat);
+          } else {
+            return res.status(400).json({
+              success: false,
+              message: {
+                error_type: 'Invalid categories format',
+                error_message: 'Categories should be provided as an array',
+                details: {
+                  suggestion: 'Provide categories as a valid array of strings'
+                }
+              }
+            });
+          }
+        } else {
+          project.categories = categories;
+        }
+      } catch (error) {
+        console.error('Categories error:', error);
+        return res.status(400).json({
+          success: false,
+          message: {
+            error_type: 'Invalid categories',
+            error_message: 'Categories data is not valid',
+            details: {
+              suggestion: 'Provide categories as a valid array of strings'
+            }
+          }
+        });
+      }
+    }
+
+    // Handle other updates
+    updates.forEach(update => {
+      if (update !== 'team_members' && update !== 'project_lead' && update !== 'categories') {
+        if (req.body[update] !== undefined && req.body[update] !== null) {
+          if (update === 'end_date' || update === 'start_date') {
             project[update] = new Date(req.body[update]);
           } else {
             project[update] = req.body[update];
           }
         }
-      });
-
-      // Handle avatar update
-      if (req.file) {
-        // Remove old avatar if exists
-        if (project.avatar && fs.existsSync(path.join(__dirname, '../../', project.avatar))) {
-          fs.unlinkSync(path.join(__dirname, '../../', project.avatar));
-        }
-        project.avatar = `/uploads/projects/${req.file.filename}`;
       }
-
-      await project.save();
-      res.send(project);
     });
+
+    console.log('Project before save:', project);
+    await project.save();
+    console.log('Project saved successfully');
+    
+    res.status(200).json({
+      success: true,
+      message: {
+        success_type: 'Project updated',
+        success_message: 'Project has been successfully updated',
+        details: {
+          project_id: project._id,
+          project_key: project.key,
+          updated_fields: updates
+        }
+      },
+      data: project
+    });
+
   } catch (error) {
-    if (req.file && fs.existsSync(req.file.path)) {
-      fs.unlinkSync(req.file.path);
-    }
-    res.status(400).send({ error: error.message });
+    console.error('Update project error details:', error);
+    
+    res.status(500).json({
+      success: false,
+      message: {
+        error_type: 'Project update failed',
+        error_message: 'An unexpected error occurred while updating the project',
+        details: process.env.NODE_ENV === 'development' ? error.message : undefined
+      }
+    });
   }
 };
 
 const deleteProject = async (req, res) => {
   try {
     if (req.user.role !== 'admin' && req.project.created_by.toString() !== req.user._id.toString()) {
-      return res.status(403).send({ error: 'Not authorized to delete this project' });
+      return res.status(403).json({ 
+        success: false,
+        message: {
+          error_type: 'Delete permission denied',
+          error_message: 'You are not authorized to delete this project',
+          details: {
+            project_id: req.project._id,
+            required_role: 'admin or project creator',
+            suggestion: 'Contact your administrator for deletion permissions'
+          }
+        }
+      });
     }
 
-    req.project.status = 'archived';
-    await req.project.save();
+    // Actually delete the project instead of archiving
+    await Project.findByIdAndDelete(req.project._id);
 
-    res.send(req.project);
+    res.status(200).json({ 
+      success: true,
+      message: {
+        success_type: 'Project deleted',
+        success_message: 'Project has been successfully deleted',
+        details: {
+          project_id: req.project._id,
+          project_key: req.project.key,
+          note: 'This action is permanent and cannot be undone'
+        }
+      },
+      data: null
+    });
   } catch (error) {
-    res.status(400).send({ error: error.message });
+    console.error('Delete project error:', error);
+    res.status(500).json({ 
+      success: false,
+      message: {
+        error_type: 'Project deletion failed',
+        error_message: 'An unexpected error occurred while deleting the project',
+        details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      }
+    });
   }
 };
 
@@ -300,7 +595,7 @@ const getProjectStats = async (req, res) => {
       }
     ]);
 
-    res.send(stats[0] || {
+    const result = stats[0] || {
       total_issues: 0,
       open_issues: 0,
       in_progress_issues: 0,
@@ -309,9 +604,31 @@ const getProjectStats = async (req, res) => {
       total_story_points: 0,
       completed_story_points: 0,
       completion_percentage: 0
+    };
+
+    res.status(200).json({ 
+      success: true,
+      message: {
+        success_type: 'Project stats retrieved',
+        success_message: 'Project statistics retrieved successfully',
+        details: {
+          project_id: req.project._id,
+          project_key: req.project.key
+        }
+      },
+      data: result
     });
+    
   } catch (error) {
-    res.status(500).send({ error: error.message });
+    console.error('Get project stats error:', error);
+    res.status(500).json({ 
+      success: false,
+      message: {
+        error_type: 'Stats retrieval failed',
+        error_message: 'An unexpected error occurred while retrieving project statistics',
+        details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      }
+    });
   }
 };
 
@@ -320,7 +637,16 @@ const addTeamMember = async (req, res) => {
     const { user_id } = req.body;
 
     if (!user_id) {
-      return res.status(400).send({ error: 'User ID is required' });
+      return res.status(400).json({ 
+        success: false,
+        message: {
+          error_type: 'Missing user ID',
+          error_message: 'User ID is required to add a team member',
+          details: {
+            suggestion: 'Provide a valid user ID in the request body'
+          }
+        }
+      });
     }
 
     const user = await User.findOne({ 
@@ -329,19 +655,61 @@ const addTeamMember = async (req, res) => {
     });
     
     if (!user) {
-      return res.status(400).send({ error: 'Invalid user' });
+      return res.status(400).json({ 
+        success: false,
+        message: {
+          error_type: 'Invalid user',
+          error_message: 'The specified user does not exist in your company',
+          details: {
+            provided_user_id: user_id,
+            suggestion: 'Select a user from your company'
+          }
+        }
+      });
     }
 
     if (req.project.team_members.includes(user_id)) {
-      return res.status(400).send({ error: 'User is already a team member' });
+      return res.status(400).json({ 
+        success: false,
+        message: {
+          error_type: 'Duplicate team member',
+          error_message: 'This user is already a team member of the project',
+          details: {
+            user_id: user_id,
+            user_name: user.name,
+            suggestion: 'User is already part of the project team'
+          }
+        }
+      });
     }
 
     req.project.team_members.push(user_id);
     await req.project.save();
 
-    res.status(201).send(req.project);
+    res.status(201).json({ 
+      success: true,
+      message: {
+        success_type: 'Team member added',
+        success_message: 'Team member has been successfully added to the project',
+        details: {
+          project_id: req.project._id,
+          user_id: user_id,
+          user_name: user.name
+        }
+      },
+      data: req.project
+    });
+    
   } catch (error) {
-    res.status(400).send({ error: error.message });
+    console.error('Add team member error:', error);
+    res.status(500).json({ 
+      success: false,
+      message: {
+        error_type: 'Team member addition failed',
+        error_message: 'An unexpected error occurred while adding the team member',
+        details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      }
+    });
   }
 };
 
@@ -353,11 +721,47 @@ const removeTeamMember = async (req, res) => {
     });
     
     if (!user) {
-      return res.status(400).send({ error: 'Invalid user' });
+      return res.status(400).json({ 
+        success: false,
+        message: {
+          error_type: 'Invalid user',
+          error_message: 'The specified user does not exist in your company',
+          details: {
+            provided_user_id: req.params.userId,
+            suggestion: 'Provide a valid user ID from your company'
+          }
+        }
+      });
     }
 
     if (req.project.project_lead.toString() === req.params.userId) {
-      return res.status(400).send({ error: 'Cannot remove project lead' });
+      return res.status(400).json({ 
+        success: false,
+        message: {
+          error_type: 'Cannot remove project lead',
+          error_message: 'You cannot remove the project lead from the team',
+          details: {
+            user_id: req.params.userId,
+            user_name: user.name,
+            suggestion: 'Assign a new project lead before removing this user'
+          }
+        }
+      });
+    }
+
+    if (!req.project.team_members.some(memberId => memberId.toString() === req.params.userId)) {
+      return res.status(400).json({ 
+        success: false,
+        message: {
+          error_type: 'User not in team',
+          error_message: 'The specified user is not a member of this project team',
+          details: {
+            user_id: req.params.userId,
+            user_name: user.name,
+            suggestion: 'User is not part of the project team'
+          }
+        }
+      });
     }
 
     req.project.team_members = req.project.team_members.filter(
@@ -374,9 +778,31 @@ const removeTeamMember = async (req, res) => {
       { assignee_id: null }
     );
 
-    res.send(req.project);
+    res.status(200).json({ 
+      success: true,
+      message: {
+        success_type: 'Team member removed',
+        success_message: 'Team member has been successfully removed from the project',
+        details: {
+          project_id: req.project._id,
+          user_id: req.params.userId,
+          user_name: user.name,
+          note: 'Assigned issues have been unassigned from this user'
+        }
+      },
+      data: req.project
+    });
+    
   } catch (error) {
-    res.status(400).send({ error: error.message });
+    console.error('Remove team member error:', error);
+    res.status(500).json({ 
+      success: false,
+      message: {
+        error_type: 'Team member removal failed',
+        error_message: 'An unexpected error occurred while removing the team member',
+        details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      }
+    });
   }
 };
 
@@ -388,6 +814,5 @@ module.exports = {
   deleteProject,
   getProjectStats,
   addTeamMember,
-  removeTeamMember,
-  upload
+  removeTeamMember
 };

@@ -6,7 +6,8 @@ const {
   register,
   login,
   getProfile,
-  logout
+  logout,
+  getAllUsersByCompany
 } = require('../controllers/user.controller');
 
 // Register new user
@@ -20,5 +21,8 @@ router.get('/me', auth, getProfile);
 
 // Logout user
 router.post('/logout', auth, logout);
+
+// Get all users by company ID
+router.get('/company/:company_id', auth, getAllUsersByCompany);
 
 module.exports = router;
