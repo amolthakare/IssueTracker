@@ -10,23 +10,21 @@ const {
   getProjectStats,
   addTeamMember,
   removeTeamMember,
-  upload
 } = require('../controllers/project.controller');
 const auth = require('../middleware/auth');
 const projectAccess = require('../middleware/projectAccess');
 
 // Create a new project
-router.post('/', auth, upload, createProject);
+router.post('/', auth, createProject);
 
 // Get all projects
 router.get('/', auth, getAllProjects);
 
 // Get a specific project
-router.get('/:id', auth, projectAccess, getProjectById);
+router.get('/:id', auth, getProjectById);
 
 // Update a project
-router.patch('/:id', auth, projectAccess, upload, updateProject);
-
+router.patch('/:id', auth, projectAccess, updateProject);
 // Delete a project
 router.delete('/:id', auth, projectAccess, deleteProject);
 
