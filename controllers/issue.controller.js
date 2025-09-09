@@ -118,12 +118,11 @@ const getAllIssues = async (req, res) => {
     if (priority) filter.priority = priority;
     if (issue_type) filter.issue_type = issue_type;
     if (sprint_id) filter.sprint_id = sprint_id;
-    if (is_blocked) filter.is_blocked = is_blocked === 'true';
+    if (is_blocked !== undefined) filter.is_blocked = is_blocked === 'true';
 
     if (search) {
       filter.$or = [
         { title: { $regex: search, $options: 'i' } },
-        { summary: { $regex: search, $options: 'i' } },
         { description: { $regex: search, $options: 'i' } }
       ];
     }
@@ -133,16 +132,63 @@ const getAllIssues = async (req, res) => {
       limit: parseInt(limit),
       sort: { created_at: -1 },
       populate: [
-        { path: 'project_id', select: 'name key' },
-        { path: 'reporter_id', select: 'name avatar' },
-        { path: 'assignee_id', select: 'name avatar' }
-      ]
+        { 
+          path: 'project_id', 
+          select: 'key' // Only get the project key
+        },
+        { 
+          path: 'reporter_id', 
+          select: 'name avatar' 
+        },
+        { 
+          path: 'assignee_id', 
+          select: 'name avatar' 
+        }
+      ],
+      select: 'title updated_at issue_type priority assignee_id reporter_id project_id' // Select only the required fields
     };
 
     const issues = await Issue.paginate(filter, options);
-    res.send(issues);
+    
+    // Transform the response to include only required fields
+    const transformedIssues = {
+      ...issues,
+      docs: issues.docs.map(issue => ({
+        _id: issue._id,
+        title: issue.title,
+        updated_at: issue.updated_at,
+        issue_type: issue.issue_type,
+        priority: issue.priority,
+        assignee: issue.assignee_id,
+        reporter: issue.reporter_id,
+        project_key: issue.project_id ? issue.project_id.key : null
+      }))
+    };
+    
+    res.status(200).json({ 
+      success: true,
+      message: {
+        success_type: 'Issues retrieved',
+        success_message: 'Issues list retrieved successfully',
+        details: {
+          total_issues: transformedIssues.totalDocs,
+          current_page: transformedIssues.page,
+          total_pages: transformedIssues.totalPages
+        }
+      },
+      data: transformedIssues
+    });
+    
   } catch (error) {
-    res.status(500).send({ error: error.message });
+    console.error('Get issues error:', error);
+    res.status(500).json({ 
+      success: false,
+      message: {
+        error_type: 'Issues retrieval failed',
+        error_message: 'An unexpected error occurred while retrieving issues',
+        details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      }
+    });
   }
 };
 
