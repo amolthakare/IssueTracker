@@ -211,6 +211,34 @@ const getAllProjects = async (req, res) => {
   }
 };
 
+const getAllProjectsNames = async (req, res) => {
+  try {
+    const projects = await Project.find({ 
+      company_id: req.user.company_id,
+      status: 'active' // Only active projects typically
+    })
+    .select('_id name key') // Only get essential fields
+    .sort({ name: 1 }); // Alphabetical order
+
+    res.status(200).json({ 
+      success: true,
+      data: projects,
+      message: {
+        success_message: 'Projects retrieved successfully'
+      }
+    });
+    
+  } catch (error) {
+    console.error('Get simple projects list error:', error);
+    res.status(500).json({ 
+      success: false,
+      message: {
+        error_message: 'Failed to fetch projects list'
+      }
+    });
+  }
+};
+
 const getProjectById = async (req, res) => {
   try {
     const project = await Project.findById(req.params.id)
@@ -809,6 +837,7 @@ const removeTeamMember = async (req, res) => {
 module.exports = {
   createProject,
   getAllProjects,
+  getAllProjectsNames,
   getProjectById,
   updateProject,
   deleteProject,
