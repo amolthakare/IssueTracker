@@ -10,6 +10,7 @@ const {
   getProjectStats,
   addTeamMember,
   removeTeamMember,
+  getAllProjectsNames,
 } = require('../controllers/project.controller');
 const auth = require('../middleware/auth');
 const projectAccess = require('../middleware/projectAccess');
@@ -19,6 +20,9 @@ router.post('/', auth, createProject);
 
 // Get all projects
 router.get('/', auth, getAllProjects);
+
+// get all project names
+router.get('/project-names', auth, getAllProjectsNames);
 
 // Get a specific project
 router.get('/:id', auth, getProjectById);
