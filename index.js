@@ -46,6 +46,7 @@ cron.schedule('0 0 * * *', async () => {
     console.error('Token cleanup error:', err);
   }
 });
+// api routes
 app.use('/auth', authRoutes);
 app.use('/companies', company);
 app.use('/issues', issueRoutes);
