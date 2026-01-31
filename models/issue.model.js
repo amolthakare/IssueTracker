@@ -141,12 +141,12 @@ const issueSchema = new mongoose.Schema({
   },
   summary: {
     type: String,
-    trim: true,
+    // trim: true,
     maxlength: 500
   },
   description: {
     type: String,
-    trim: true
+    // trim: true
   },
   issue_type: {
     type: String,
@@ -161,7 +161,7 @@ const issueSchema = new mongoose.Schema({
   story_points: {
     type: Number,
     min: 0,
-    max: 20
+    max: 30
   },
   priority: {
     type: String,
@@ -171,7 +171,7 @@ const issueSchema = new mongoose.Schema({
   reporter_id: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: true,
+    // required: true,
     index: true
   },
   assignee_id: {
