@@ -273,7 +273,7 @@ const getIssueById = async (req, res) => {
 const updateIssue = async (req, res) => {
   try {
     const updates = Object.keys(req.body);
-    const allowedUpdates = ['title', 'summary', 'description', 'issue_type', 'status', 'story_points', 'priority', 'assignee_id', 'due_date', 'estimated_time', 'actual_time', 'environment', 'labels', 'sprint_id', 'is_blocked', 'blocked_reason'];
+    const allowedUpdates = ['title', 'summary', 'description', 'issue_type', 'status', 'story_points', 'priority', 'assignee_id', 'due_date', 'estimated_time', 'actual_time', 'environment', 'labels', 'sprint_id', 'is_blocked', 'blocked_reason', 'project_id', 'reporter_id', 'subtasks'];
     const isValidOperation = updates.every(update => allowedUpdates.includes(update));
 
     if (!isValidOperation) {
@@ -314,9 +314,12 @@ const updateIssue = async (req, res) => {
     issue._original = { ...issue._doc };
     issue._modifiedBy = req.user._id;
 
+    const idFields = ['assignee_id', 'reporter_id', 'sprint_id', 'project_id'];
     updates.forEach(update => {
       if (update === 'due_date' && req.body[update]) {
         issue[update] = new Date(req.body[update]);
+      } else if (idFields.includes(update) && req.body[update] === "") {
+        issue[update] = null;
       } else {
         issue[update] = req.body[update];
       }

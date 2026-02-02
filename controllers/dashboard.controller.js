@@ -81,6 +81,16 @@ const getDashboardStats = async (req, res) => {
       .populate('reporter_id', 'name avatar')
       .populate('project_id', 'name');
 
+    // 5. Upcoming Deadlines
+    const upcomingDeadlines = await Issue.find({
+      project_id: { $in: projectIdArray },
+      due_date: { $gte: new Date(), $lte: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000) },
+      status: { $ne: 'resolved' }
+    })
+      .sort({ due_date: 1 })
+      .limit(5)
+      .populate('project_id', 'name');
+
     res.status(200).json({
       success: true,
       data: {
@@ -106,6 +116,12 @@ const getDashboardStats = async (req, res) => {
           action: 'updated issue',
           target: activity.title,
           time: activity.updated_at
+        })),
+        upcomingDeadlines: upcomingDeadlines.map(issue => ({
+          _id: issue._id,
+          title: issue.title,
+          project: issue.project_id ? issue.project_id.name : 'Unknown',
+          due_date: issue.due_date
         }))
       }
     });
