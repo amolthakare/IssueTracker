@@ -1,0 +1,127 @@
+const Issue = require('../models/issue.model');
+const Project = require('../models/project.model');
+const User = require('../models/user.model');
+const mongoose = require('mongoose');
+
+const getDashboardStats = async (req, res) => {
+  try {
+    const companyId = req.user.company_id;
+
+    // 1. Basic Stats
+    const totalProjects = await Project.countDocuments({ company_id: companyId });
+    
+    // We need projects of this company to filter issues
+    const projectIds = await Project.find({ company_id: companyId }).select('_id');
+    const projectIdArray = projectIds.map(p => p._id);
+
+    const openIssues = await Issue.countDocuments({ 
+      project_id: { $in: projectIdArray },
+      status: 'open'
+    });
+
+    const resolvedIssues = await Issue.countDocuments({ 
+      project_id: { $in: projectIdArray },
+      status: 'resolved'
+    });
+
+    const teamMembers = await User.countDocuments({ company_id: companyId });
+
+    // 2. Recent Issues
+    const recentIssues = await Issue.find({ project_id: { $in: projectIdArray } })
+      .sort({ created_at: -1 })
+      .limit(5)
+      .populate('project_id', 'name')
+      .populate('assignee_id', 'name');
+
+    // 3. Project Progress
+    const projectProgress = await Issue.aggregate([
+      { $match: { project_id: { $in: projectIdArray } } },
+      { 
+        $group: {
+          _id: '$project_id',
+          total: { $sum: 1 },
+          completed: {
+            $sum: {
+              $cond: [{ $in: ['$status', ['resolved', 'closed']] }, 1, 0]
+            }
+          }
+        }
+      },
+      { $limit: 10 },
+      {
+        $lookup: {
+          from: 'projects',
+          localField: '_id',
+          foreignField: '_id',
+          as: 'projectInfo'
+        }
+      },
+      { $unwind: '$projectInfo' },
+      {
+        $project: {
+          id: '$_id',
+          name: '$projectInfo.name',
+          total: 1,
+          completed: 1,
+          progress: {
+            $cond: [
+              { $eq: ['$total', 0] },
+              0,
+              { $round: [{ $multiply: [{ $divide: ['$completed', '$total'] }, 100] }, 0] }
+            ]
+          }
+        }
+      }
+    ]);
+
+    // 4. Recent Activity (Simplified)
+    const recentActivity = await Issue.find({ project_id: { $in: projectIdArray } })
+      .sort({ updated_at: -1 })
+      .limit(5)
+      .populate('reporter_id', 'name avatar')
+      .populate('project_id', 'name');
+
+    res.status(200).json({
+      success: true,
+      data: {
+        stats: {
+          totalProjects,
+          openIssues,
+          resolvedIssues,
+          teamMembers
+        },
+        recentIssues: recentIssues.map(issue => ({
+          _id: issue._id,
+          title: issue.title,
+          project: issue.project_id ? issue.project_id.name : 'Unknown',
+          priority: issue.priority,
+          status: issue.status,
+          assignee: issue.assignee_id ? issue.assignee_id.name : 'Unassigned',
+          date: issue.created_at
+        })),
+        projects: projectProgress,
+        activities: recentActivity.map(activity => ({
+          _id: activity._id,
+          user: activity.reporter_id ? activity.reporter_id.name : 'Unknown',
+          action: 'updated issue',
+          target: activity.title,
+          time: activity.updated_at
+        }))
+      }
+    });
+
+  } catch (error) {
+    console.error('Dashboard stats error:', error);
+    res.status(500).json({
+      success: false,
+      message: {
+        error_type: 'Dashboard data fetch failed',
+        error_message: error.message
+      }
+    });
+  }
+};
+
+module.exports = {
+  getDashboardStats
+};

@@ -255,10 +255,10 @@ issueSchema.virtual('issue_key').get(function() {
 
 // Pre-save hook to update history
 issueSchema.pre('save', function(next) {
-  if (this.isModified()) {
+  if (this.isModified() && !this.isNew && this._original) {
     const modifiedPaths = this.modifiedPaths();
     modifiedPaths.forEach(path => {
-      if (path !== 'updated_at' && path !== 'history') {
+      if (path !== 'updated_at' && path !== 'history' && !path.startsWith('comments') && !path.startsWith('subtasks') && !path.startsWith('attachments')) {
         this.history.push({
           field: path,
           old_value: this._original[path],
@@ -270,6 +270,7 @@ issueSchema.pre('save', function(next) {
   }
   next();
 });
+
 
 const Issue = mongoose.model('Issue', issueSchema);
 

@@ -6,6 +6,7 @@ const company = require('./routes/company.routes')
 const authRoutes = require('./routes/user.routes')
 const issueRoutes = require('./routes/issue.route');
 const projectRoutes = require('./routes/project.routes');
+const dashboardRoutes = require('./routes/dashboard.routes');
 const cron = require('node-cron');
 const User = require("./models/user.model");
 const app = express();
@@ -51,6 +52,8 @@ app.use('/auth', authRoutes);
 app.use('/companies', company);
 app.use('/issues', issueRoutes);
 app.use('/projects', projectRoutes);
+app.use('/dashboard', dashboardRoutes);
+
 
 // Error handling middleware
 app.use((err, req, res, next) => {

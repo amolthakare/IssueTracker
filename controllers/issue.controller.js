@@ -640,11 +640,66 @@ const deleteAttachment = async (req, res) => {
   }
 };
 
+const deleteIssue = async (req, res) => {
+  try {
+    const issue = await Issue.findById(req.params.id);
+    if (!issue) {
+      return res.status(404).json({
+        success: false,
+        message: {
+          error_type: 'Issue not found',
+          error_message: 'The requested issue does not exist'
+        }
+      });
+    }
+
+    // Check permissions - only reporter or admin can delete
+    if (issue.reporter_id.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: {
+          error_type: 'Permission denied',
+          error_message: 'Not authorized to delete this issue'
+        }
+      });
+    }
+
+    // Clean up attachments from filesystem
+    if (issue.attachments && issue.attachments.length > 0) {
+      issue.attachments.forEach(attachment => {
+        if (fs.existsSync(attachment.file_path)) {
+          fs.unlinkSync(attachment.file_path);
+        }
+      });
+    }
+
+    await Issue.findByIdAndDelete(req.params.id);
+
+    res.status(200).json({
+      success: true,
+      message: {
+        success_type: 'Issue deleted',
+        success_message: 'Issue and its attachments have been deleted successfully'
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: {
+        error_type: 'Issue deletion failed',
+        error_message: error.message,
+        details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      }
+    });
+  }
+};
+
 module.exports = {
   createIssue,
   getAllIssues,
   getIssueById,
   updateIssue,
+  deleteIssue,
   addComment,
   addSubtask,
   uploadAttachment,

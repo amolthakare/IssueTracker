@@ -6,6 +6,7 @@ const {
   getAllIssues,
   getIssueById,
   updateIssue,
+  deleteIssue,
   addComment,
   addSubtask,
   uploadAttachment,
@@ -26,8 +27,12 @@ router.get('/:id', auth, getIssueById);
 // Update an issue
 router.patch('/:id', auth, updateIssue);
 
+// Delete an issue
+router.delete('/:id', auth, deleteIssue);
+
 // Add a comment
 router.post('/:id/comments', auth, addComment);
+
 
 // Add a subtask
 router.post('/:id/subtasks', auth, addSubtask);
