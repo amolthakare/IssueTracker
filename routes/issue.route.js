@@ -3,6 +3,8 @@ const express = require('express');
 const router = express.Router();
 const {
   createIssue,
+  getBoardData,
+  getBacklog,
   getAllIssues,
   getIssueById,
   updateIssue,
@@ -20,6 +22,12 @@ router.post('/', auth, upload, createIssue);
 
 // Get all issues
 router.get('/', auth, getAllIssues);
+
+// Get board data for active sprint
+router.get('/board/:project_id', auth, getBoardData);
+
+// Get backlog data (planned sprints + issues)
+router.get('/backlog/:project_id', auth, getBacklog);
 
 // Get a specific issue
 router.get('/:id', auth, getIssueById);

@@ -42,6 +42,95 @@ const upload = multer({
   fileFilter: fileFilter
 }).array('attachments', 5);
 
+const getBoardData = async (req, res) => {
+  try {
+    const { project_id } = req.params;
+
+    // Find the active sprint for this project
+    const Sprint = mongoose.model('Sprint');
+    const activeSprint = await Sprint.findOne({ project_id, status: 'active' });
+
+    if (!activeSprint) {
+      return res.status(200).json({
+        success: true,
+        message: { info_type: 'No Active Sprint', info_message: 'There is no active sprint for this project' },
+        data: {
+          sprint: null,
+          columns: {
+            open: [],
+            in_progress: [],
+            resolved: [],
+            closed: []
+          }
+        }
+      });
+    }
+
+    // Get all issues in this sprint
+    const issues = await Issue.find({ project_id, sprint_id: activeSprint._id })
+      .populate('assignee_id', 'name avatar')
+      .populate('reporter_id', 'name avatar');
+
+    // Group issues by status
+    const columns = {
+      open: issues.filter(i => i.status === 'open'),
+      in_progress: issues.filter(i => i.status === 'in_progress'),
+      resolved: issues.filter(i => i.status === 'resolved'),
+      closed: issues.filter(i => i.status === 'closed')
+    };
+
+    res.status(200).json({
+      success: true,
+      data: {
+        sprint: activeSprint,
+        columns
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: { error_type: 'Fetch Failed', error_message: error.message }
+    });
+  }
+};
+
+const getBacklog = async (req, res) => {
+  try {
+    const { project_id } = req.params;
+
+    // Get all issues that are not in an active or completed sprint
+    // (i.e., sprint_id is null or the sprint is in 'planned' status)
+    
+    // First find planned sprints for this project
+    const Sprint = mongoose.model('Sprint');
+    const plannedSprints = await Sprint.find({ project_id, status: 'planned' });
+    const plannedSprintIds = plannedSprints.map(s => s._id);
+
+    const issues = await Issue.find({
+      project_id,
+      $or: [
+        { sprint_id: { $exists: false } },
+        { sprint_id: null },
+        { sprint_id: { $in: plannedSprintIds } }
+      ]
+    }).populate('assignee_id', 'name avatar');
+
+    res.status(200).json({
+      success: true,
+      data: {
+        planned_sprints: plannedSprints,
+        backlog_issues: issues.filter(i => !i.sprint_id),
+        sprint_issues: issues.filter(i => i.sprint_id) // Grouped in frontend by sprint_id
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: { error_type: 'Fetch Failed', error_message: error.message }
+    });
+  }
+};
+
 const createIssue = async (req, res) => {
   try {
     upload(req, res, async (err) => {
@@ -713,6 +802,8 @@ const deleteIssue = async (req, res) => {
 
 module.exports = {
   createIssue,
+  getBoardData,
+  getBacklog,
   getAllIssues,
   getIssueById,
   updateIssue,

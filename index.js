@@ -5,6 +5,7 @@ const { connection } = require("./config/db");
 const company = require('./routes/company.routes')
 const authRoutes = require('./routes/user.routes')
 const issueRoutes = require('./routes/issue.route');
+const sprintRoutes = require('./routes/sprint.routes');
 const projectRoutes = require('./routes/project.routes');
 const dashboardRoutes = require('./routes/dashboard.routes');
 const reportRoutes = require('./routes/report.routes');
@@ -54,6 +55,7 @@ cron.schedule('0 0 * * *', async () => {
 app.use('/auth', authRoutes);
 app.use('/companies', company);
 app.use('/issues', issueRoutes);
+app.use('/sprints', sprintRoutes);
 app.use('/projects', projectRoutes);
 app.use('/dashboard', dashboardRoutes);
 app.use('/reports', reportRoutes);
