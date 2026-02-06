@@ -10,10 +10,25 @@ const { default: mongoose } = require('mongoose');
 
 const DEFAULT_AVATAR_PATH = path.join(__dirname, '../assets/user.png');
 
-// Configure multer for file uploads
+// Configure multer for disk storage
+const storage = multer.diskStorage({
+  destination: function(req, file, cb) {
+    const uploadDir = path.join(__dirname, '../uploads/avatars');
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    cb(null, uploadDir);
+  },
+  filename: function(req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, 'avatar-' + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
 const upload = multer({
+  storage: storage,
   limits: {
-    fileSize: 1000000 // 1MB limit
+    fileSize: 2 * 1024 * 1024 // 2MB limit
   },
   fileFilter(req, file, cb) {
     if (!file.originalname.match(/\.(jpg|jpeg|png)$/)) {
@@ -132,48 +147,24 @@ const register = async (req, res) => {
         }
 
         // Handle avatar processing
-        let avatarBase64 = null;
+        let avatarPath = null;
         try {
           if (req.file) {
-            // Validate file type and size
-            if (!req.file.mimetype.startsWith('image/')) {
-              return res.status(400).json({
-                success: false,
-                message: {
-                  error_type: 'Invalid file type',
-                  error_message: 'Only image files are allowed',
-                  details: {
-                    provided_type: req.file.mimetype,
-                    allowed_types: ['image/jpeg', 'image/png', 'image/gif']
-                  }
-                }
-              });
-            }
-            
-            if (req.file.size > 2 * 1024 * 1024) { // 2MB limit
-              return res.status(400).json({
-                success: false,
-                error: 'File too large',
-                message: {
-                  error_type: 'File too large',
-                  error_message: 'Maximum file size is 2MB',
-                  details: {
-                    max_size: '2MB',
-                    provided_size: `${(req.file.size / (1024 * 1024)).toFixed(2)}MB`
-                  }
-                }
-              });
-            }
-            
-            avatarBase64 = req.file.buffer.toString('base64');
+            avatarPath = `uploads/avatars/${req.file.filename}`;
           } else {
-            const defaultAvatar = fs.readFileSync(DEFAULT_AVATAR_PATH);
-            avatarBase64 = defaultAvatar.toString('base64');
+            // Use a default path or leave as null (fallback in frontend)
+            avatarPath = 'uploads/avatars/default-avatar.png';
+            
+            // Ensure default avatar exists if we reference it
+            const defaultSource = DEFAULT_AVATAR_PATH;
+            const defaultDest = path.join(__dirname, '../uploads/avatars/default-avatar.png');
+            if (fs.existsSync(defaultSource) && !fs.existsSync(defaultDest)) {
+              fs.copyFileSync(defaultSource, defaultDest);
+            }
           }
         } catch (error) {
           console.error('Avatar processing error:', error);
-          // Continue without avatar rather than failing registration
-          avatarBase64 = null;
+          avatarPath = null;
         }
 
         // Create new user
@@ -181,9 +172,9 @@ const register = async (req, res) => {
           company_id: company._id,
           name,
           email,
-          password, // Ensure this is hashed in your User model pre-save hook
+          password, 
           role,
-          avatar: avatarBase64
+          avatar: avatarPath
         });
 
         await user.save();
@@ -392,34 +383,31 @@ const getAllUsersByCompany = async (req, res) => {
       });
     }
 
-    // Check if company exists
+    // Check if company exists - logging for diagnostics
     const company = await Company.findById(company_id);
     if (!company) {
-      return res.status(404).json({ 
-        success: false,
-        message: {
-          error_type: 'Company not found',
-          error_message: 'The specified company does not exist',
-          details: {
-            company_id: company_id
-          }
-        }
-      });
+      console.warn(`Company with ID ${company_id} not found in database, but proceeding to fetch users associated with this ID.`);
+      // Instead of failing with 404, we'll try to get users. 
+      // This helps if the company record was deleted but users still exist with that ID.
     }
 
     // Get all users for the company
     const users = await User.find({ company_id })
       .select('-password -tokens') // Exclude sensitive data
-      .populate('company_id', 'name company_code') // Populate company details
+      .populate('company_id', 'name company_code') // Populate company details (might be null if company missing)
       .sort({ createdAt: -1 }); // Sort by newest first
 
     res.status(200).json({ 
       success: true,
       data: {
-        company: {
+        company: company ? {
           _id: company._id,
           name: company.name,
           code: company.company_code
+        } : {
+          _id: company_id,
+          name: 'Unknown Company',
+          code: 'N/A'
         },
         users: users,
         count: users.length

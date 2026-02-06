@@ -250,6 +250,7 @@ issueSchema.index({ sprint_id: 1, status: 1 });
 
 // Virtual for formatted issue ID
 issueSchema.virtual('issue_key').get(function() {
+  if (!this.project_id) return `ISSUE-${this._id.toString().substring(0, 4)}`;
   return `${this.project_id.toString().substring(0, 3).toUpperCase()}-${this._id.toString().substring(0, 4)}`;
 });
 

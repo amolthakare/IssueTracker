@@ -11,7 +11,7 @@ const multer = require('multer');
 // Configure multer for file uploads
 const storage = multer.diskStorage({
   destination: function(req, file, cb) {
-    const uploadDir = path.join(__dirname, '../../uploads/issues');
+    const uploadDir = path.join(__dirname, '../uploads/issues');
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });
     }
@@ -55,7 +55,7 @@ const createIssue = async (req, res) => {
         });
       }
 
-      const { project_id, title, summary, description, issue_type, priority, assignee_id, due_date, estimated_time, labels } = req.body;
+      const { project_id, title, summary, description, issue_type, priority, assignee_id, due_date, estimated_time, labels, subtasks } = req.body;
 
       // Validate project exists
       const project = await Project.findById(project_id);
@@ -93,10 +93,18 @@ const createIssue = async (req, res) => {
         }
       }
 
+      // Process subtasks
+      const processedSubtasks = Array.isArray(subtasks) 
+        ? subtasks.map(subtask => ({
+            ...subtask,
+            reporter_id: subtask.reporter_id || req.user._id
+          }))
+        : [];
+
       // Process attachments
       const attachments = req.files ? req.files.map(file => ({
         file_name: file.originalname,
-        file_path: file.path,
+        file_path: `uploads/issues/${file.filename}`,
         file_type: file.mimetype,
         file_size: file.size,
         uploaded_by: req.user._id
@@ -114,6 +122,7 @@ const createIssue = async (req, res) => {
         due_date: due_date ? new Date(due_date) : null,
         estimated_time: estimated_time || null,
         labels: processedLabels,
+        subtasks: processedSubtasks,
         attachments
       });
 
@@ -318,6 +327,11 @@ const updateIssue = async (req, res) => {
     updates.forEach(update => {
       if (update === 'due_date' && req.body[update]) {
         issue[update] = new Date(req.body[update]);
+      } else if (update === 'subtasks' && Array.isArray(req.body[update])) {
+        issue.subtasks = req.body[update].map(subtask => ({
+          ...subtask,
+          reporter_id: subtask.reporter_id || req.user._id
+        }));
       } else if (idFields.includes(update) && req.body[update] === "") {
         issue[update] = null;
       } else {

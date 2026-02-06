@@ -3,14 +3,31 @@ const Company = require('../models/company.model');
 
 const createCompany = async (req, res) => {
   try {
-    const company = new Company(req.body);
+    const { name, email } = req.body;
+    
+    // Check if company with this email already exists
+    if (email) {
+      const existingCompany = await Company.findOne({ email });
+      if (existingCompany) {
+        return res.status(201).send({
+          ...existingCompany.toObject(),
+          company_code: existingCompany.company_code
+        });
+      }
+    }
+
+    const company = new Company({
+      name: name || 'Default Company',
+      email: email || `comp-${Date.now()}@example.com`
+    });
+    
     await company.save();
     res.status(201).send({
       ...company.toObject(),
-      // Include the company_code in the response
       company_code: company.company_code
     });
   } catch (error) {
+    console.error('Create company error:', error);
     res.status(400).send(error);
   }
 };

@@ -6,12 +6,13 @@ const mongoose = require('mongoose');
 const getDashboardStats = async (req, res) => {
   try {
     const companyId = req.user.company_id;
+    const companyObjectId = new mongoose.Types.ObjectId(companyId);
 
     // 1. Basic Stats
-    const totalProjects = await Project.countDocuments({ company_id: companyId });
+    const totalProjects = await Project.countDocuments({ company_id: companyObjectId });
     
     // We need projects of this company to filter issues
-    const projectIds = await Project.find({ company_id: companyId }).select('_id');
+    const projectIds = await Project.find({ company_id: companyObjectId }).select('_id');
     const projectIdArray = projectIds.map(p => p._id);
 
     const openIssues = await Issue.countDocuments({ 
@@ -21,10 +22,10 @@ const getDashboardStats = async (req, res) => {
 
     const resolvedIssues = await Issue.countDocuments({ 
       project_id: { $in: projectIdArray },
-      status: 'resolved'
+      status: { $in: ['resolved', 'closed'] }
     });
 
-    const teamMembers = await User.countDocuments({ company_id: companyId });
+    const teamMembers = await User.countDocuments({ company_id: companyObjectId });
 
     // 2. Recent Issues
     const recentIssues = await Issue.find({ project_id: { $in: projectIdArray } })
@@ -34,33 +35,37 @@ const getDashboardStats = async (req, res) => {
       .populate('assignee_id', 'name');
 
     // 3. Project Progress
-    const projectProgress = await Issue.aggregate([
-      { $match: { project_id: { $in: projectIdArray } } },
-      { 
-        $group: {
-          _id: '$project_id',
-          total: { $sum: 1 },
+    // 3. Project Progress & All Projects
+    const projectsWithProgress = await Project.aggregate([
+      { $match: { company_id: companyObjectId } },
+      {
+        $lookup: {
+          from: 'issues',
+          localField: '_id',
+          foreignField: 'project_id',
+          as: 'projectIssues'
+        }
+      },
+      {
+        $project: {
+          id: '$_id',
+          name: '$name',
+          total: { $size: '$projectIssues' },
           completed: {
-            $sum: {
-              $cond: [{ $in: ['$status', ['resolved', 'closed']] }, 1, 0]
+            $size: {
+              $filter: {
+                input: '$projectIssues',
+                as: 'issue',
+                cond: { $in: ['$$issue.status', ['resolved', 'closed']] }
+              }
             }
           }
         }
       },
-      { $limit: 10 },
-      {
-        $lookup: {
-          from: 'projects',
-          localField: '_id',
-          foreignField: '_id',
-          as: 'projectInfo'
-        }
-      },
-      { $unwind: '$projectInfo' },
       {
         $project: {
-          id: '$_id',
-          name: '$projectInfo.name',
+          id: 1,
+          name: 1,
           total: 1,
           completed: 1,
           progress: {
@@ -71,7 +76,8 @@ const getDashboardStats = async (req, res) => {
             ]
           }
         }
-      }
+      },
+      { $limit: 10 }
     ]);
 
     // 4. Recent Activity (Simplified)
@@ -109,7 +115,7 @@ const getDashboardStats = async (req, res) => {
           assignee: issue.assignee_id ? issue.assignee_id.name : 'Unassigned',
           date: issue.created_at
         })),
-        projects: projectProgress,
+        projects: projectsWithProgress,
         activities: recentActivity.map(activity => ({
           _id: activity._id,
           user: activity.reporter_id ? activity.reporter_id.name : 'Unknown',

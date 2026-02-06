@@ -7,11 +7,14 @@ const authRoutes = require('./routes/user.routes')
 const issueRoutes = require('./routes/issue.route');
 const projectRoutes = require('./routes/project.routes');
 const dashboardRoutes = require('./routes/dashboard.routes');
+const reportRoutes = require('./routes/report.routes');
 const cron = require('node-cron');
 const User = require("./models/user.model");
 const app = express();
+const path = require('path');
 app.use(express.json());
 app.use(cors({origin:"*"}));
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 // app.get('/',(req,res)=>{
 //     res.send("hello");
 // })
@@ -53,6 +56,7 @@ app.use('/companies', company);
 app.use('/issues', issueRoutes);
 app.use('/projects', projectRoutes);
 app.use('/dashboard', dashboardRoutes);
+app.use('/reports', reportRoutes);
 
 
 // Error handling middleware
